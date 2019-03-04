@@ -1,0 +1,141 @@
+#!/bin/bash
+
+
+# colours
+if [[ $1 == '-c' ]]; then
+	F=$'\e[0m'
+	for ((i=0; i<8; i++)); do
+		printf -v F${i} "%b" "\e[3${i}m"
+	done
+fi
+
+printf "TTY:\t\t"; tty
+
+printf "SHELL:\t\t$SHELL\n"
+
+printf "TERMINAL:\t$TERM\n"
+
+if [[ $1 == '-c' ]]; then
+	printf "COLORS:\t\t${F1}##${F2}##${F3}##${F4}##${F5}##${F6}##${F7}##${F}\n"
+fi
+
+if hash pacman >/dev/null 2>&1; then
+	printf "PKGS (pacman):\t"; pacman -Qq 2>/dev/null | wc -l
+elif hash dpkg >/dev/null 2>&1; then
+	printf "PKGS (dpkg):\t"; dpkg -l | grep -e "^ii" | wc -l
+elif hash apt >/dev/null 2>&1; then
+	printf "PKGS (apt):\t"; apt list --installed | wc -l
+elif hash rpm >/dev/null 2>&1; then
+	printf "PKGS (rpm):\t"; rpm -qa | wc -l
+elif hash emerge >/dev/null 2>&1; then
+	printf "PKGS (portage):\t"
+	if hash equery >/dev/null 2>&1; then
+		equery --quiet list "*" | wc -l
+	elif hash find >/dev/null 2>&1; then
+		find /var/db/pkg -mindepth 2 -type d | wc -l
+	else
+		command ls -d /var/db/pkg/*/* | wc -l
+	fi
+fi
+
+if [[ $DISPLAY && $TERM != 'linux' && -z $WM ]]; then
+	printf "WINDOW MANAGER: "
+	if [[ $WM ]]; then
+		printf "%s\n" "$WM"
+	elif hash wmctrl >/dev/null 2>&1; then
+		wmctrl -m | awk 'NR == 1 {print $2}'
+	elif hash xprop >/dev/null 2>&1; then
+		id=$(xprop -root -notype | awk '/_NET_SUPPORTING_WM_CHECK:/ {print $5}')
+		xprop -id $id  -notype -len 100 -f _NET_WM_NAME 8t | awk -F'"' 'NF > 1 {print $2}'
+	else
+		ps -A | grep -i 'gnome\|plasma\|mate\|cinnamon\|lxsession\|xfce\|[a-z]*wm\|i3\|openbox\|awesome' | awk '{print $NF}'
+	fi
+	[[ $XDG_CURRENT_DESKTOP ]] && printf "DESKTOP:\t$XDG_CURRENT_DESKTOP\n"
+	[[ $GDMSESSION ]] && printf "SESSION:\t$GDMSESSION\n"
+fi
+
+# distro name
+if [[ -e /etc/os-release ]] && . /etc/os-release 2>/dev/null; then
+	printf "DISTRIBUTION:\t$PRETTY_NAME\n"
+elif [[ -e /usr/lib/os-release ]] && . /usr/lib/os-release 2>/dev/null; then
+	printf "DISTRIBUTION:\t$PRETTY_NAME\n"
+elif [[ -e /etc/lsb-release ]] && . /etc/lsb-release 2>/dev/null; then
+	printf "DISTRIBUTION:\t$DISTRIB_DESCRIPTION\n"
+fi
+
+# install date
+if [[ -e /var/log/pacman.log ]]; then
+	printf "INSTALL DATE:\t"
+	awk 'NR==1 {
+		gsub(/\[| .*\].*/, "")
+		gsub(/-/, " ")
+		print $0
+	}' /var/log/pacman.log
+fi
+
+printf "KERNEL INFO:\t"; uname -a
+
+# user
+printf "USER INFO:\n"
+if hash w >/dev/null 2>&1; then
+	w | awk '{
+	if (NR == 1) {
+		sub(/ /, "")
+		printf("\t\ttime: %s\n", $1)
+		sub(/.* up/, "up:")
+		printf("\t\t%s\n", $0)
+	} else {
+		sub(/TTY /, "TTY")
+		printf("\t\t%s\n", $0)
+	} }' | cut -d '-' -f 1
+elif hash who >/dev/null 2>&1; then
+	who | awk '{printf "\t\t%s\n\n", $0}'
+	uptime -p | awk '{printf "\t\t%s\n", $0}'
+elif hash whoami >/dev/null 2>&1; then
+	whoami | awk '{printf "\t\t%s\n\n", $0}'
+	uptime -p | awk '{printf "\t\t%s\n", $0}'
+fi
+
+if hash df >/dev/null 2>&1; then
+	printf "FILESYSTEMS:\n"
+	df -h -x tmpfs -x devtmpfs | awk '{printf "\t\t%s\n", $0}'
+fi
+
+printf "MEMORY:\n"; free -h | awk '{printf "\t\t%s\n", $0}'
+
+model=$(grep -m 1 'model name' /proc/cpuinfo | awk -F':' '{print $2}')
+printf "\nCPU MODEL:\t${model# }"
+
+cache=$(grep -m 1 --color=auto 'cache size' /proc/cpuinfo | awk -F':' '{print $2}')
+printf "\nCPU CACHE:\t${cache# }"
+
+cores=$(grep -m 1 'cpu cores' /proc/cpuinfo | awk -F':' '{print $2}')
+cores=${cores// /}
+threads=$(grep -c "^processor" /proc/cpuinfo)
+(( threads )) || threads=$(grep -c "^core" /proc/cpuinfo)
+
+printf "\nCPU USAGE:\t"; ps aux | awk -v t=${threads:-1} -v c=${cores:-1} 'BEGIN{ sum = 0 }
+NR > 1 { sum += $3 }
+END{ printf "%d cores, %d threads @ %.2f%% average\n", c, t, sum / t }'
+
+printf "CPU SPEED:\t"; awk 'BEGIN{i = 0; out = ""}
+	/cpu MHz/ {
+		if (i) {
+			out = out " | " int($4) " MHz"
+		} else {
+			out = int($4) " MHz"
+		}
+		i++
+	}
+END{print out}' /proc/cpuinfo
+
+printf "\nVIDEO DEVICE(S):\n"
+lspci | grep -i 'vga\|3d' | awk '{sub(/[0-9]*.[0-9]*.[0-9]* /, ""); printf("\t\t%s\n", $0)}'
+
+printf "\nNETWORK DEVICE(S):\n"
+lspci | grep -i 'network\|ethernet' | awk '{sub(/[0-9]*.[0-9]*.[0-9]* /, ""); printf("\t\t%s\n", $0)}'
+
+printf "\nNETWORK INFO:\n"; ip -h address | awk '{printf "\t\t%s\n", $0}'
+
+printf "\nPROCESS TREE:\n"; pstree | awk '{printf "\t\t%s\n", $0}'
+

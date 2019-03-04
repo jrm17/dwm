@@ -1,0 +1,45 @@
+#!/bin/bash
+
+# simple surf/tabbed wrapper
+
+xidfile="$HOME/.cache/tabbed-surf.xid"
+
+uris=( # first will be the new tab page
+'start.duckduckgo.com/'
+'archlabslinux.slack.com/'
+'forum.archlabslinux.com'
+'bitbucket.org'
+'youtube.com'
+)
+
+if (( $# )); then
+	uris=()
+	for i in "$@"; do
+		uris+=("$i")
+	done
+fi
+
+tab()
+{
+	tabbed -dn tabbed-surf -r 2 surf -e '' "$1" >"$xidfile" 2>/dev/null &
+}
+
+open()
+{
+	if [[ ! -r "$xidfile" ]]; then
+		tab "$1"
+	else
+		while read -r id; do
+			xid="$id"
+		done < "$xidfile"
+		if xprop -id "$xid" >/dev/null 2>&1; then
+			surf -e "$xid" "$1" >/dev/null 2>&1 &
+		else
+			tab "$1"
+		fi
+	fi
+}
+
+for ((i=0; i < ${#uris[@]}; i++)); do
+	open "${uris[$i]}" && (( i )) || sleep 0.1
+done

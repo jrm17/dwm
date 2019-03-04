@@ -1,0 +1,7 @@
+#!/bin/bash
+
+nvidia-settings -q all 2>/dev/null |
+    awk '/GPUUtilization|GPUCurrentClockFreqs|UsedDedicatedGPUMem|CoreTemp/ && /Attribute/ {
+        gsub(/\(.*\)|  Attribute |'"'"'|GPU|Current|UsedDedicated|String/, "")
+        print
+    }' | sort | uniq

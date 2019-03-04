@@ -1,0 +1,62 @@
+#!/bin/bash
+
+# simple efi stub boot setup script
+# written by Nathaniel Maia, 2019
+
+# this script assume the esp is mounted at /boot
+
+#------------------------------------------------------#
+# these can be changed to suit your needs
+
+
+# boot partition in /dev/sdXX format
+boot=/dev/sda1
+root=/dev/sda2
+
+# label for the boot entry
+dist='ArchLabs Linux'
+
+# kernel options, should ALWAYS contain 'rw' at the end
+opts='quiet loglevel=3 vga=current nowatchdog rw'
+
+# opts='quiet loglevel=3 vga=current rd.systemd.show_status=auto nowatchdog rw'
+
+
+#------------------------------------------------------#
+# these will be filled in automatically
+
+if [[ $(find /boot -name '*-ucode.img') =~ .*-ucode\.img ]]; then
+	ucode="${BASH_REMATCH[0]}"
+	ucode='initrd=\'"${ucode##*/}"
+fi
+
+kernel=$(uname)
+kernel=${kernel,,}
+
+vmlinuz="/vmlinuz-$kernel"
+initrd='initrd=\'"initramfs-$kernel.img"
+
+disk=${boot%[1-9]}
+part=${boot: -1}
+
+root="root=PARTUUID=$(blkid -s PARTUUID -o value $root)"
+
+#------------------------------------------------------#
+# execution
+
+printf 'the following command will be used\n\n'
+echo "efibootmgr -v -d $disk -p $part -c -L '$dist' -l $vmlinuz \\
+	-u '$root $opts $ucode $initrd'"
+
+read -re -p $'\nwant to continue? [y/N] ' conf
+
+[[ $conf == 'y' || $conf == 'Y' ]] || exit
+
+if (( UID )); then
+	su -c "efibootmgr -v -d $disk -p $part -c -L '$dist' -l $vmlinuz -u '$root $opts $ucode $initrd'"
+else
+	efibootmgr -v -d $disk -p $part -c -L "$dist" -l $vmlinuz -u "$root $opts $ucode $initrd"
+fi
+
+printf '\ncommand finished, listing boot entries\n\n'
+efibootmgr -v

@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# Tool for writing ISO images to USB devices
+# Written by Nathaniel Maia, 2017-2019
+#
+# This software is provided free of charge and WITHOUT warranty
+
+set -eu
+declare -a DEVS=()
+declare -g ISO="" DRIVE="" LABEL="" FORCE=false
+
+die()
+{
+    printf "%s\n" "$1" && sleep 1 && exit ${2:-0}
+}
+
+prep()
+{
+    for dev in $(lsblk -lno NAME,TRAN,TYPE | awk '/disk/ && /usb/ {print "/dev/"$1}'); do
+        [[ $(lsblk -lno SIZE,TYPE "$dev" | awk '/disk/ && /G|T/ { gsub(/G|T/, ""); if(int($1) < 64) print int($1) }') ]] && DEVS+=("$dev")
+    done
+    (( ${#DEVS[@]} != 0 ))
+}
+
+device()
+{
+    prep || { printf "%s\n" "No eligible devices.. Exiting"; sleep 2; exit 0; }
+    clear
+    if (( ${#DEVS[@]} == 1 )); then
+        printf "Only one available device: ${DEVS[*]}"; sleep 1
+        DRIVE="${DEVS[*]}"
+    else
+        PS3=$'\n'"device: "
+        select DRIVE in "${DEVS[@]}"; do
+            [[ $DRIVE ]] && break || die "No valid device entered... Exiting" 1
+        done
+    fi
+    LABEL="$(lsblk -lno MODEL $DRIVE)"
+    LABEL=${LABEL/%  /}
+}
+
+write()
+{
+    clear
+    if [[ $FORCE != true ]]; then
+        printf "ALL DATA on $DRIVE - ${LABEL:-unknown} will be destroyed!!\n"
+        printf "\nDo you want to continue? [y/N]: "; read -r yn
+        [[ $yn =~ [yY] ]] || exit 0
+    fi
+    clear && su -c "dd if='$ISO' of=$DRIVE bs=4M status='progress'"
+}
+
+# catch command line options
+for arg in "$@"; do case $arg in
+    --help|-h) printf "usage: flash <iso> [-f,--force]\n"; exit 0 ;;
+    --force|-f) FORCE=true ;;
+    *) [[ -f $arg && $arg == *.iso ]] && ISO="$arg"
+esac done
+
+if [[ $ISO ]]; then
+    device
+    [[ $DRIVE && $ISO ]] && write
+else
+    printf "No file to flash\n\nusage: flash <iso> [-f,--force]\n"; exit 1
+fi

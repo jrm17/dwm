@@ -1,0 +1,71 @@
+#!/bin/bash
+
+# Background Setting Script
+# Written by Nathaniel Maia - 2018
+
+# Configuration
+SET_MON=0
+NO_XINERAMA=''
+SET_TYPE='scale'
+MON1='/home/smoke/Pictures/walls/wallhaven-631870.jpg'
+MON2='/home/smoke/Pictures/walls/wallhaven-631870-vert.jpg'
+
+# Script Values
+GUI='' CHW='' SCRIPT_PATH="$0"
+
+badarg()
+{
+    printf "error: additional arg required or improper arg passed.\n"
+    exit 2
+}
+
+chwall()
+{
+    case $SET_MON in
+        0) MON1="$WALL_PATH"; MON2=""
+            sed -i "/^MON2=.*/ c MON2=''" "$SCRIPT_PATH"
+            sed -i "/^MON1=.*/ c MON1='${MON1}'" "$SCRIPT_PATH" ;;
+        *) eval "MON${SET_MON}='$WALL_PATH'"
+            sed -i "/^MON${SET_MON}=.*/ c MON${SET_MON}='${WALL_PATH}'" "$SCRIPT_PATH"
+    esac
+}
+
+run()
+{
+    if [[ $MON1 && $MON2 ]]; then
+        feh --no-fehbg --bg-$SET_TYPE "$MON1" "$MON2"
+    elif [[ $MON1 ]]; then
+        feh $NO_XINERAMA --no-fehbg --bg-$SET_TYPE "$MON1"
+    else
+        printf "error: no monitors configured\n"
+        return 1
+    fi
+}
+
+sxiv_sel()
+{
+    if hash sxiv >/dev/null 2>&1; then
+        WALL_PATH="$(sxiv -rto $HOME/Pictures | awk 'NR==1')"
+        [[ $WALL_PATH ]] && return 0
+    else
+        printf "error: this requires sxiv\n"
+    fi
+    exit 0
+}
+
+while getopts ":xSs:t:m:" OPT; do
+    case $OPT in
+        s) CHW='chwall'; [[ $OPTARG =~ (^.*\.jpg$|^.*\.png$) && -f $OPTARG ]] && WALL_PATH="$OPTARG" || badarg ;;
+        t) [[ $OPTARG =~ (^center$|^fill$|^max$|^scale$|^tile$) ]] && SET_TYPE="$OPTARG" || badarg ;;
+        m) [[ ${OPTARG:0:1} =~ [0-2] ]] && SET_MON="${OPTARG:0:1}" || badarg ;;
+        S) CHW='chwall' GUI='sxiv_sel' ;;
+        x) NO_XINERAMA='--no-xinerama' ;;
+        :) badarg ;;
+        \?) printf "Invalid option: -%s\n" "$OPTARG"; exit 2
+    esac
+done
+
+eval ${GUI}
+eval ${CHW}
+run
+
